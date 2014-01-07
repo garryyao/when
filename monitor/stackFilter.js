@@ -7,44 +7,57 @@
  * @author: Brian Cavalier
  * @author: John Hann
  */
-(function(define) { 'use strict';
-define(function(require) {
+(function(define){ 'use strict';
+    define(function(require){
 
-	var array = require('./array');
+        var array = require('./array');
 
-	return function(isExcluded, replace) {
-		return function filterStack(stack) {
-			var excluded;
+        function lineFilter(regexps){
+            return function(line){
+                var filtered = false;
+                var tests = regexps.slice(0);
+                while(tests.length) {
+                    if (tests.pop().test(line)) {
+                        filtered = true;
+                        break;
+                    }
+                }
+                return filtered;
+            }
+        }
 
-			if(!(stack && stack.length)) {
-				return [];
-			}
+        return function(excludePatterns, replacer){
+            var filter = lineFilter(excludePatterns);
+            return function filterStack(stack){
+                var excluded;
 
-			excluded = [];
+                if (!(stack && stack.length)) {
+                    return [];
+                }
 
-			return array.reduce(stack, [], function(filtered, line) {
-				var match;
+                excluded = [];
 
-				match = isExcluded(line);
-				if(match) {
-					if(!excluded) {
-						excluded = [];
-					}
-					excluded.push(line);
-				} else {
-					if(excluded) {
-						if(filtered.length > 1) {
-							filtered = filtered.concat(replace(excluded));
-							excluded = null;
-						}
-					}
-					filtered.push(line);
-				}
+                return array.reduce(stack, [], function(filtered, line){
+                    // Trim left whitespaces.
+                    // line = line.trimLeft();
+                    var match = filter(line);
+                    if (!match) {
+                        if (excluded && excluded.length && filtered.length) {
+                            var substitution = typeof replacer == 'function' ? replacer(excluded) : replacer;
+                            filtered = filtered.concat(substitution);
+                            excluded = null;
+                        }
+                        filtered.push(line);
+                    } else if (replacer) {
+                        if (!excluded) {
+                            excluded = [];
+                        }
+                        excluded.push(line);
+                    }
 
-				return filtered;
-			});
-		};
-	};
-
-});
-}(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(require); }));
+                    return filtered;
+                });
+            };
+        };
+    });
+}(typeof define === 'function' && define.amd ? define : function(factory){ module.exports = factory(require); }));

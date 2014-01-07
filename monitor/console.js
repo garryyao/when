@@ -4,48 +4,40 @@
  * Licensed under the MIT License at:
  * http://www.opensource.org/licenses/mit-license.php
  *
- * @author: Brian Cavalier
- * @author: John Hann
+ * @author: Garry Yao
  */
-(function(define) { 'use strict';
-define(function(require) {
+(function(define){ 'use strict';
+    define(function(require){
 
-	var createAggregator, throttleReporter, simpleReporter, aggregator,
-		formatter, stackFilter, excludeRx, filter, reporter, logger,
-		rejectionMsg, reasonMsg, filteredFramesMsg, stackJumpMsg, attachPoint;
+        var createAggregator = require('./aggregator'),
+            throttleReporter = require('./throttledReporter'),
+            simpleFormatter = require('./simpleFormatter'),
+            logger = require('./logger/consoleGroup');
 
-	createAggregator = require('./aggregator');
-	throttleReporter = require('./throttledReporter');
-	simpleReporter = require('./simpleReporter');
-	formatter = require('./simpleFormatter');
-	stackFilter = require('./stackFilter');
-	logger = require('./logger/consoleGroup');
+        var promiseFilters = [
+            /when\.js|(module|node)\.js:\d|when\/monitor\//i,
+            /\b(PromiseStatus|Promise)\b/
+        ];
 
-	rejectionMsg = '=== Unhandled rejection escaped at ===';
-	reasonMsg = '=== Caused by reason ===';
-	stackJumpMsg = '  --- new call stack ---';
-	filteredFramesMsg = '  ...[filtered frames]...';
+        var error_filters = [
+            /(when|keys|aggregator|reporter)\.js/
+        ];
 
-	excludeRx = /when\.js|(module|node)\.js:\d|when\/monitor\//i;
-	filter = stackFilter(exclude, mergePromiseFrames);
-	reporter = simpleReporter(formatter(filter, rejectionMsg, reasonMsg, stackJumpMsg), logger);
+        var formatter = simpleFormatter(
+            {
+                filter: promiseFilters
+            },
+            {
+                filter: error_filters,
+                replacer: '...'
+            }
+        );
 
-	aggregator = createAggregator(throttleReporter(200, reporter));
+        var aggregator = createAggregator(throttleReporter(formatter, logger, 500));
 
-	attachPoint = typeof console !== 'undefined'
-		? aggregator.publish(console)
-		: aggregator;
+        if (typeof console !== 'undefined')
+            aggregator.publish(console);
 
-	return aggregator;
-
-	function mergePromiseFrames(/* frames */) {
-		return filteredFramesMsg;
-	}
-
-	function exclude(line) {
-		var rx = attachPoint.promiseStackFilter || excludeRx;
-		return rx.test(line);
-	}
-
-});
+        return aggregator;
+    });
 }(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(require); }));
