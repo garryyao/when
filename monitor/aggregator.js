@@ -4,90 +4,91 @@
  * Licensed under the MIT License at:
  * http://www.opensource.org/licenses/mit-license.php
  *
- * @author: Brian Cavalier
- * @author: John Hann
+ * @author: Garry Yao
  */
-(function(define) { 'use strict';
-define(function() {
+(function(define){ 'use strict';
+    define(function(){
 
-	return function createAggregator(reporter) {
-		var promises, nextKey;
+        return function createAggregator(reporter){
+            var nextKey;
 
-		function PromiseStatus(parent) {
-			if(!(this instanceof PromiseStatus)) {
-				return new PromiseStatus(parent);
-			}
+            function PromiseStatus(){
+                if (!(this instanceof PromiseStatus)) {
+                    return new PromiseStatus();
+                }
 
-			var stackHolder;
+                var stackHolder;
 
-			try {
-				throw new Error();
-			} catch(e) {
-				stackHolder = e;
-			}
+                try {
+                    throw new Error();
+                } catch(e) {
+                    stackHolder = e;
+                }
 
-			this.key = nextKey++;
-			promises[this.key] = this;
+                this.key = nextKey++;
+                this.createdAt = stackHolder;
+            }
 
-			this.parent = parent;
-			this.timestamp = +(new Date());
-			this.createdAt = stackHolder;
-		}
+            // Make a deep copy of this status chain.
+            function clone(){
+                var status = PromiseStatus();
+                status.createdAt = this.createdAt;
+                status.rejected = this.rejected;
+                status.fulfilled = this.fulfilled;
+                this.parent && (status.parent = clone.call(this.parent));
+                return status;
+            }
 
-		PromiseStatus.prototype = {
-			observed: function () {
-				if(this.key in promises) {
-					delete promises[this.key];
-					report();
-				}
+            PromiseStatus.prototype = {
+                fulfilled: function(){
+                },
+                rejected: function(reason){
+                    this.reason = reason;
+                    reporter(this);
+                },
+                // TODO: fulfillment can be tracked in this function.
+                // Resolve this status by the previous.
+                resolved: function(status){
 
-				return new PromiseStatus(this);
-			},
-			fulfilled: function () {
-				if(this.key in promises) {
-					delete promises[this.key];
-					report();
-				}
-			},
-			rejected: function (reason) {
-				var stackHolder;
+                    // avoid circle-references.
+                    var curr = this;
+                    while(curr) {
+                        if (status === curr)
+                            return;
+                        curr = curr.parent;
+                    }
 
-				if(this.key in promises) {
+                    curr = status;
+                    while(curr) {
+                        if (this === curr)
+                            return;
+                        curr = curr.parent;
+                    }
 
-					try {
-						throw new Error(reason && reason.message || reason);
-					} catch (e) {
-						stackHolder = e;
-					}
+                    this.parent = status;
+                },
+                // Create a new chain that rebase onto the other's head.
+                rebase: function(newBase){
+                    var head = clone.call(this), base = head;
+                    while(base.parent)
+                        base = base.parent;
+                    base.resolved(newBase);
+                    return head;
+                }
+            };
 
-					this.reason = reason;
-					this.rejectedAt = stackHolder;
-					report();
+            reset();
 
-				}
-			}
-		};
+            return publish({ publish: publish });
 
-		reset();
+            function publish(target){
+                target.PromiseStatus = PromiseStatus;
+                return target;
+            }
 
-		return publish({ publish: publish });
-
-		function publish(target) {
-			target.PromiseStatus = PromiseStatus;
-			target.reportUnhandled = report;
-			target.resetUnhandled = reset;
-			return target;
-		}
-
-		function report() {
-			return reporter(promises);
-		}
-
-		function reset() {
-			nextKey = 0;
-			promises = {}; // Should be WeakMap
-		}
-	};
-
-});
+            function reset(){
+                nextKey = 0;
+            }
+        };
+    });
 }(typeof define === 'function' && define.amd ? define : function(factory) { module.exports = factory(); }));
