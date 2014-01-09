@@ -62,7 +62,7 @@
                 return [rejections_stack_header]
                     .concat(rejectionStack)
                     .concat([cause_stack_header])
-                    .concat(rejectionCause).join('\n');
+                    .concat(rejectionCause);
             }
 
             function lines(stack){
@@ -77,8 +77,7 @@
                 var cause, formatted;
 
                 formatted = {
-                    reason: rec.reason,
-                    message: rec.reason && rec.reason.toString()
+                    reason: rec.reason && rec.reason.toString()
                 };
 
                 if (hasStackTraces) {
@@ -86,11 +85,9 @@
                     if (!cause) {
                         cause = rec.rejectedAt && rec.rejectedAt.stack;
                     }
-                    var errorStack = causeStackFilter(lines(cause));
-                    var promiseChain = formatRejectionChain(rec);
-                    formatted.stack = errorStack.join('\n');
-                    formatted.chain = promiseChain.join('\n');
-                    formatted.assembly = stitch(errorStack, promiseChain);
+                    formatted.stack = causeStackFilter(lines(cause));
+                    formatted.chain = formatRejectionChain(rec);
+                    formatted.stitched = stitch(formatted.stack, formatted.chain);
                 }
 
                 return formatted;

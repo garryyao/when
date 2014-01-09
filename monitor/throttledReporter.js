@@ -12,7 +12,9 @@
 
         // Reduce sub stack.
         function substack(one, other){
-            return other.chain.indexOf(one.chain) > -1 || one.chain.indexOf(other.chain) > -1;
+            other = other.chain.join('');
+            one = one.chain.join('');
+            return one.indexOf(other) > -1 || other.indexOf(one) > -1;
         }
 
         return function throttleReporter(formatter, logger, interval){
@@ -23,7 +25,7 @@
             (function log(){
                 var messages = [];
                 while(rejections.length)
-                    messages.push(rejections.shift().assembly);
+                    messages.push(rejections.shift());
 
                 if (messages.length) {
                     logger(messages);
@@ -38,7 +40,7 @@
                 // Re-format the rejection.
                 rej = formatter(rej);
                 // Ignore any empty chain.
-                if (!rej.chain)
+                if (!rej.chain.length)
                     return;
 
                 for (var i = 0; i < rejections.length; i++) {
