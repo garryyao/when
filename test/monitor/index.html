@@ -5,6 +5,20 @@
     <title></title>
     <script type="text/javascript" src="../../node_modules/curl/src/curl.js"></script>
     <script type="text/javascript">
+        var tests = [
+            './deep-chain',
+            './developer-error',
+            './immediate-rejections',
+            './map',
+            './multiple-escapes',
+            './returned-promise',
+            './handled-promise',
+            './done',
+            './nested-return',
+            './spread',
+            './thenable'
+        ];
+
         curl.config({
             packages: {
                 when: { location: '../..', main: 'when' }
@@ -12,7 +26,7 @@
             preloads: ['when/monitor/console']
         });
 
-        curl(['./done']);
+        curl(tests);
     </script>
 </head>
 <body>
