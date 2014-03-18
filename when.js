@@ -61,8 +61,7 @@ define(function (require) {
 	 * @returns {Promise} promise whose fate is determine by resolver
 	 */
 	function promise(resolver) {
-		return new Promise(resolver,
-			monitorApi.PromiseStatus && monitorApi.PromiseStatus());
+		return new Promise(resolver);
 	}
 
 	/**
@@ -73,11 +72,11 @@ define(function (require) {
 	 * @returns {Promise} promise whose fate is determine by resolver
 	 * @name Promise
 	 */
-	function Promise(resolver, status) {
-		var self, value, consumers = [];
+	function Promise(resolver) {
+		var self, value, status, consumers = [];
 
 		self = this;
-		this._status = status;
+		this._status = status = createStatus();
 		this.inspect = inspect;
 		this._when = _when;
 
@@ -86,7 +85,7 @@ define(function (require) {
 			resolver(promiseResolve, promiseReject, promiseNotify);
 		} catch(e) {
 			promiseReject(e);
-		}
+ 		}
 
 		/**
 		 * Returns a snapshot of this promise's current status at the instant of call
@@ -96,25 +95,42 @@ define(function (require) {
 			return value ? value.inspect() : toPendingState();
 		}
 
+		function updateStatus() {
+			if (status) {
+				var ins = value.inspect(),
+					state = ins.state;
+				if (state === 'rejected')
+					status.rejected(ins.reason);
+				else
+					status.fulfilled(ins.value);
+			}
+		}
+
 		/**
 		 * Private message delivery. Queues and delivers messages to
 		 * the promise's ultimate fulfillment value or rejection reason.
 		 * @private
 		 */
 		function _when(resolve, notify, onFulfilled, onRejected, onProgress) {
-			consumers ? consumers.push(deliver) : enqueue(function() { deliver(value); });
 
-			function deliver(p) {
-				p._when(resolve, notify, onFulfilled, onRejected, onProgress);
+			consumers ? consumers.push(deliver) : enqueue(function() {
+				deliver(value, self._status);
+			});
+
+			function deliver(p, status) {
+				p._when(function(val) {
+					resolve.call(this, val, status);
+				}, notify, onFulfilled, onRejected, onProgress);
 			}
 		}
 
 		/**
 		 * Transition from pre-resolution state to post-resolution state, notifying
 		 * all listeners of the ultimate fulfillment or rejection
-		 * @param {*} val resolution value
+		 * @param {*|Promise} val resolution value
+		 * @param {PromiseStatus} lastStatus the previous promise status
 		 */
-		function promiseResolve(val) {
+		function promiseResolve(val, lastStatus) {
 			if(!consumers) {
 				return;
 			}
@@ -123,11 +139,39 @@ define(function (require) {
 			consumers = undef;
 
 			value = coerce(self, val);
-			enqueue(function () {
-				if(status) {
-					updateStatus(value, status);
+			var ins = value.inspect();
+
+			if (status && ins.state === 'rejected') {
+				var reason = ins.reason;
+				if (!reason.stack) {
+					try {
+						throw new Error(reason && reason.message || reason);
+					}
+					catch (e) {
+						reason.stack = e.stack;
+					}
 				}
-				runHandlers(queue, value);
+			}
+
+			function notify() {
+				updateStatus();
+				runHandlers(queue, value, status);
+			}
+
+			function resolved() {
+				self._status = status = value._status.rebase(status);
+				notify();
+			}
+
+			enqueue(function() {
+				if (status && lastStatus instanceof monitorApi.PromiseStatus) {
+					status.resolved(lastStatus);
+				}
+				// We're resolving it by another promise.
+				if (value._status)
+					when(value, resolved, resolved);
+				else
+					notify();
 			});
 		}
 
@@ -167,10 +211,10 @@ define(function (require) {
 
 		return new Promise(function(resolve, reject, notify) {
 			self._when(resolve, notify, onFulfilled, onRejected, onProgress);
-		}, this._status && this._status.observed());
+		});
 	};
 
-	/**
+		/**
 	 * Register a rejection handler.  Shortcut for .then(undefined, onRejected)
 	 * @param {function?} onRejected
 	 * @return {Promise}
@@ -271,6 +315,10 @@ define(function (require) {
 		return x instanceof Promise ? x : resolve(x);
 	}
 
+	function createStatus() {
+		return monitorApi.PromiseStatus && monitorApi.PromiseStatus();
+	}
+
 	/**
 	 * Returns a resolved promise. The returned promise will be
 	 *  - fulfilled with promiseOrValue if it is a value, or
@@ -338,19 +386,19 @@ define(function (require) {
 		function makeDeferred(resolvePending, rejectPending, notifyPending) {
 			deferred.resolve = deferred.resolver.resolve = function(value) {
 				if(resolved) {
-					return resolve(value);
+					return resolve(value, pending._status);
 				}
 				resolved = true;
-				resolvePending(value);
+				resolvePending(value, pending._status);
 				return pending;
 			};
 
 			deferred.reject  = deferred.resolver.reject  = function(reason) {
 				if(resolved) {
-					return resolve(new RejectedPromise(reason));
+					return resolve(new RejectedPromise(reason), pending._status);
 				}
 				resolved = true;
-				rejectPending(reason);
+				rejectPending(reason, pending._status);
 				return pending;
 			};
 
@@ -366,8 +414,9 @@ define(function (require) {
 	 * value to each.
 	 */
 	function runHandlers(queue, value) {
+		var args = slice.call(arguments, 1);
 		for (var i = 0; i < queue.length; i++) {
-			queue[i](value);
+			queue[i].apply(null, args);
 		}
 	}
 
@@ -677,7 +726,12 @@ define(function (require) {
 	function _map(array, mapFunc, fallback) {
 		return when(array, function(array) {
 
-			return new Promise(resolveMap);
+			var p = new Promise(function(){
+                var args = arguments, self = this;
+                enqueue(function(){
+                    resolveMap.apply(self, args);
+                });
+            });
 
 			function resolveMap(resolve, reject, notify) {
 				var results, len, toResolve, i;
@@ -688,7 +742,7 @@ define(function (require) {
 				results = [];
 
 				if(!toResolve) {
-					resolve(results);
+					resolve(results, p._status);
 					return;
 				}
 
@@ -706,11 +760,13 @@ define(function (require) {
 						results[i] = mapped;
 
 						if(!--toResolve) {
-							resolve(results);
+							resolve(results, p._status);
 						}
 					}, reject, notify);
 				}
 			}
+
+			return p;
 		});
 	}
 
