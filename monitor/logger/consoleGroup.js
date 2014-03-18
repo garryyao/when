@@ -6,6 +6,7 @@
  *
  * @author: Brian Cavalier
  * @author: John Hann
+ * @author: Garry Yao
  */
 (function(define) { 'use strict';
 define(function(require) {
@@ -44,7 +45,9 @@ define(function(require) {
 				warnAll = function(msg, list) {
 					console.groupCollapsed(msg);
 					try {
-						array.forEach(list, warn);
+						array.forEach(list, function(rej){
+							warn(rej.stitched.join('\n'));
+						});
 					} finally {
 						console.groupEnd();
 					}
@@ -57,12 +60,7 @@ define(function(require) {
 			}
 
 			log = function(rejections) {
-				if(rejections.length) {
-					warnAll('[promises] Unhandled rejections: '
-						+ rejections.length, rejections);
-				} else {
-					warn('[promises] All previously unhandled rejections have now been handled');
-				}
+				warnAll('[promises] Rejections: ' + rejections.length, rejections);
 			};
 		}
 
